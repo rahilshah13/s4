@@ -30,6 +30,21 @@ typedef enum {
     S4_PERM_LIST = 1 << 2
 } s4_permission_t;
 
+typedef enum {
+    S4_EVENT_OBJECT_CREATED = 1 << 0,
+    S4_EVENT_OBJECT_DELETED = 1 << 1,
+    S4_EVENT_BUCKET_CREATED = 1 << 2
+} s4_event_type_t;
+
+typedef struct {
+    uint64_t event_id;
+    s4_event_type_t type;
+    char tenant_id[S4_MAX_TENANT_LEN];
+    char bucket[S4_MAX_BUCKET_LEN];
+    char key[S4_MAX_KEY_LEN];
+    uint64_t timestamp;
+} s4_event_t;
+
 typedef struct {
     char node_id[S4_MAX_NODE_ID_LEN];
     char storage_path[512];
@@ -44,8 +59,8 @@ typedef struct {
 } s4_config_t;
 
 typedef struct {
-    char tenant_id[S4_MAX_TENANT_LEN];       // Accessor / Requesting tenant namespace
-    char owner_tenant_id[S4_MAX_TENANT_LEN]; // Physical resource owner namespace for shared buckets
+    char tenant_id[S4_MAX_TENANT_LEN];
+    char owner_tenant_id[S4_MAX_TENANT_LEN];
     char bucket[S4_MAX_BUCKET_LEN];
     char key[S4_MAX_KEY_LEN];
     size_t size;
@@ -86,6 +101,11 @@ int s4_account_confirm(sqlite3 *db, const char *confirmation_token);
 int s4_email_send_confirmation(const char *email, const char *confirmation_token);
 int s4_bucket_share(sqlite3 *db, const char *owner_tenant_id, const char *bucket, const char *target_account_id, uint32_t permissions);
 bool s4_bucket_check_access(sqlite3 *db, const char *tenant_id, const char *bucket, s4_permission_t required_perm);
+
+// --- Event Streams & Bucket Notifications Module ---
+int s4_event_init_db(sqlite3 *db);
+int s4_event_publish(sqlite3 *db, s4_event_type_t type, const char *tenant_id, const char *bucket, const char *key);
+int s4_event_poll(sqlite3 *db, const char *tenant_id, const char *bucket, uint64_t after_event_id, s4_write_callback_t write_cb, void *user_data);
 
 // --- Programmatic Credential Management ---
 int s4_credential_create(sqlite3 *db, const char *account_id, char *out_access_key, char *out_secret_key);
