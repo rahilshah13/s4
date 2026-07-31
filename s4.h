@@ -7,7 +7,7 @@
 #include <sys/types.h>
 #include <sqlite3.h>
 
-#define S4_VERSION "1.1.0"
+#define S4_VERSION "1.2.0"
 #define S4_DEFAULT_PORT 8080
 #define S4_MAX_KEY_LEN 1024
 #define S4_MAX_BUCKET_LEN 256
@@ -119,6 +119,8 @@ int s4_db_init(s4_config_t *config);
 void s4_db_close(s4_config_t *config);
 bool s4_tenant_verify_exists(sqlite3 *db, const char *tenant_id);
 bool s4_bucket_create(sqlite3 *db, const char *tenant_id, const char *bucket);
+int s4_tenant_list_buckets(sqlite3 *db, const char *tenant_id, s4_write_callback_t write_cb, void *user_data);
+int s4_bucket_list_keys(sqlite3 *db, const char *tenant_id, const char *bucket, s4_write_callback_t write_cb, void *user_data);
 
 // --- Auth Module (`s4_auth.c`) ---
 bool s4_auth_verify(sqlite3 *db, const char *auth_header, const char *method, const char *uri, const char *tenant_id);
