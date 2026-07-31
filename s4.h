@@ -7,7 +7,7 @@
 #include <sys/types.h>
 #include <sqlite3.h>
 
-#define S4_VERSION "1.0.0"
+#define S4_VERSION "1.1.0"
 #define S4_DEFAULT_PORT 8080
 #define S4_MAX_KEY_LEN 1024
 #define S4_MAX_BUCKET_LEN 256
@@ -21,19 +21,22 @@
 typedef enum {
     S4_BACKEND_DISK = 0,
     S4_BACKEND_MEMORY = 1,
-    S4_BACKEND_REMOTE_NODE = 2
+    S4_BACKEND_REMOTE_NODE = 2,
+    S4_BACKEND_GIT = 3
 } s4_backend_type_t;
 
 typedef enum {
     S4_PERM_READ = 1 << 0,
     S4_PERM_WRITE = 1 << 1,
-    S4_PERM_LIST = 1 << 2
+    S4_PERM_LIST = 1 << 2,
+    S4_PERM_GIT = 1 << 3
 } s4_permission_t;
 
 typedef enum {
     S4_EVENT_OBJECT_CREATED = 1 << 0,
     S4_EVENT_OBJECT_DELETED = 1 << 1,
-    S4_EVENT_BUCKET_CREATED = 1 << 2
+    S4_EVENT_BUCKET_CREATED = 1 << 2,
+    S4_EVENT_GIT_PUSH = 1 << 3
 } s4_event_type_t;
 
 typedef struct {
@@ -127,6 +130,13 @@ void s4_storage_shutdown(void);
 int s4_storage_put_stream(const s4_object_t *obj, s4_read_callback_t read_cb, void *user_data);
 int s4_storage_get_stream(const s4_object_t *obj, s4_write_callback_t write_cb, void *user_data);
 int s4_storage_delete(const s4_object_t *obj);
+
+// --- Git Server & Repository Module (`s4_git.c`) ---
+int s4_git_init(s4_config_t *config);
+void s4_git_shutdown(void);
+bool s4_git_repo_init(const char *tenant_id, const char *bucket);
+int s4_git_handle_info_refs(const char *tenant_id, const char *bucket, const char *service, s4_write_callback_t write_cb, void *user_data);
+int s4_git_handle_service(const char *tenant_id, const char *bucket, const char *service, s4_read_callback_t read_cb, s4_write_callback_t write_cb, void *user_data);
 
 // --- Gateway Module (`s4_gateway.c`) ---
 int s4_gateway_init(s4_config_t *config);
