@@ -11,8 +11,9 @@
 * `PUT /:bucket/:key(const char *bucket, const char *key, const char *auth_header, s4_read_callback_t read_cb, void *user_data)`
 * `GET /:bucket/:key(const char *bucket, const char *key, const char *auth_header, bool has_range, off_t range_start, off_t range_end, s4_write_callback_t write_cb, void *user_data)`
 * `DELETE /:bucket/:key(const char *bucket, const char *key, const char *auth_header)`
-* `GET /:bucket(const char *bucket, const char *auth_header, int max_keys, const char *continuation_token)`
+* `GET /:bucket(const char *bucket, const char *auth_header, int max_keys, const char *continuation_token, s4_write_callback_t write_cb, void *user_data)`
 * `PUT /:bucket(const char *bucket, const char *auth_header)`
+* `GET /tenants/:tenant_id/buckets(const char *tenant_id, const char *auth_header, s4_write_callback_t write_cb, void *user_data)`
 * `GET /:bucket/events(const char *bucket, const char *auth_header, uint64_t after_event_id, s4_write_callback_t write_cb, void *user_data)`
 * `GET /.well-known/acme-challenge/:token(const char *token)`
 * `GET /:bucket/info/refs(const char *bucket, const char *service, const char *auth_header, s4_write_callback_t write_cb, void *user_data)`
@@ -41,6 +42,8 @@
 * `void s4_db_close(s4_config_t *config)`
 * `bool s4_tenant_verify_exists(sqlite3 *db, const char *tenant_id)`
 * `bool s4_bucket_create(sqlite3 *db, const char *tenant_id, const char *bucket)`
+* `int s4_tenant_list_buckets(sqlite3 *db, const char *tenant_id, s4_write_callback_t write_cb, void *user_data)`
+* `int s4_bucket_list_keys(sqlite3 *db, const char *tenant_id, const char *bucket, s4_write_callback_t write_cb, void *user_data)`
 * `bool s4_auth_verify(sqlite3 *db, const char *auth_header, const char *method, const char *uri, const char *tenant_id)`
 * `int s4_storage_init(s4_config_t *config)`
 * `void s4_storage_shutdown(void)`
