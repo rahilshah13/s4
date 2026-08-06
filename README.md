@@ -1,7 +1,7 @@
 #### s3 replacement
 
 * `docker swarm init`
-* `docker build -t s4:latest .`
+* `docker compose up --build`
 * `docker stack deploy -c docker-compose.yml s4_stack`
 
 ---
@@ -19,6 +19,9 @@
 * `GET /:bucket/info/refs(const char *bucket, const char *service, const char *auth_header, s4_write_callback_t write_cb, void *user_data)`
 * `POST /:bucket/git-upload-pack(const char *bucket, const char *auth_header, s4_read_callback_t read_cb, s4_write_callback_t write_cb, void *user_data)`
 * `POST /:bucket/git-receive-pack(const char *bucket, const char *auth_header, s4_read_callback_t read_cb, s4_write_callback_t write_cb, void *user_data)`
+* `GET /tenants/:tenant_id/prolog/kbs(const char *tenant_id, const char *auth_header, s4_write_callback_t write_cb, void *user_data)`
+* `GET /tenants/:tenant_id/prolog/predicates(const char *tenant_id, const char *auth_header, s4_write_callback_t write_cb, void *user_data)`
+* `POST /tenants/:tenant_id/prolog/query(const char *tenant_id, const char *query_name, const char *auth_header, s4_write_callback_t write_cb, void *user_data)`
 
 ---
 
@@ -44,6 +47,13 @@
 * `bool s4_bucket_create(sqlite3 *db, const char *tenant_id, const char *bucket)`
 * `int s4_tenant_list_buckets(sqlite3 *db, const char *tenant_id, s4_write_callback_t write_cb, void *user_data)`
 * `int s4_bucket_list_keys(sqlite3 *db, const char *tenant_id, const char *bucket, s4_write_callback_t write_cb, void *user_data)`
+* `int s4_prolog_export_tenant_kb(sqlite3 *db, const char *tenant_id)`
+* `int s4_prolog_export_bucket_kb(sqlite3 *db, const char *tenant_id, const char *bucket)`
+* `int s4_prolog_get_knowledge_bases(sqlite3 *db, const char *tenant_id, s4_write_callback_t write_cb, void *user_data)`
+* `int s4_prolog_get_predicates_human_readable(sqlite3 *db, const char *tenant_id, s4_write_callback_t write_cb, void *user_data)`
+* `int s4_prolog_run_query(sqlite3 *db, const char *tenant_id, const char *query_name, s4_write_callback_t write_cb, void *user_data)`
+* `int s4_wal_write_replicated(const s4_object_t *obj, s4_read_callback_t read_cb, void *user_data, s4_index_entry_t *out_idx)`
+* `int s4_wal_read_replicated(const s4_object_t *obj, const s4_index_entry_t *idx, s4_write_callback_t write_cb, void *user_data)`
 * `bool s4_auth_verify(sqlite3 *db, const char *auth_header, const char *method, const char *uri, const char *tenant_id)`
 * `int s4_storage_init(s4_config_t *config)`
 * `void s4_storage_shutdown(void)`

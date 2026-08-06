@@ -1,75 +1,134 @@
 version: '3.8'
 
 services:
-  nginx-proxy:
-    image: nginx:alpine
+  s4_gateway:
+    build:
+      context: .
+      dockerfile_inline: |
+        # syntax=docker/dockerfile:1.6
+        FROM alpine:3.19 AS builder
+        RUN apk add --no-cache gcc musl-dev sqlite-dev make git libev-dev
+        WORKDIR /app
+        COPY s4.h .
+        COPY s4.c .
+        RUN gcc -O2 s4.c -lpthread -lsqlite3 -o s4_daemon
+        FROM alpine:3.19
+        RUN apk add --no-cache sqlite-libs libev
+        WORKDIR /app
+        COPY --from=builder /app/s4_daemon /app/s4_daemon
+        EXPOSE 8080
+        CMD ["/app/s4_daemon"]
     ports:
-      - target: 80
-        published: 80
-        protocol: tcp
-        mode: host
-      - target: 443
-        published: 443
-        protocol: tcp
-        mode: host
+      - "8080:8080"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - s4_data:/data/s4
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        mkdir -p /data/s4/certs
-        # Bootstrap a temporary self-signed cert if none exists so Nginx starts normally
-        if [ ! -f /data/s4/certs/fullchain.pem ]; then
-          apk add --no-cache openssl > /dev/null 2>&1
-          openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-            -keyout /data/s4/certs/privkey.pem \
-            -out /data/s4/certs/fullchain.pem \
-            -subj "/CN=yourdomain.com"
-        fi
-        
-        # Background watcher to detect when s4-gateway updates certificates and reload Nginx
-        (
-          LAST_MOD=""
-          while true; do
-            CURRENT_MOD=$(stat -c %Y /data/s4/certs/fullchain.pem 2>/dev/null)
-            if [ "$LAST_MOD" != "" ] && [ "$CURRENT_MOD" != "$LAST_MOD" ]; then
-              nginx -s reload
-            fi
-            LAST_MOD="$CURRENT_MOD"
-            sleep 3600
-          done
-        ) &
-        
-        exec nginx -g 'daemon off;'
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  s4_ui:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM alpine:3.20
+
+        RUN apk add --no-cache python3 py3-pip py3-requests git nodejs npm
+        RUN WITH_EXTENSION=0 python3 -m pip install --no-cache-dir --break-system-packages mwparserfromhell
+
+        COPY . /S4_UI_SRC
+        WORKDIR /S4_UI_SRC
+
+        RUN rm -rf .output .vinxi node_modules dist
+
+        RUN cat <<'EOF' > package.json
+        {
+          "name": "s4-provider-ui",
+          "type": "module",
+          "scripts": {
+            "dev": "vinxi dev",
+            "build": "vinxi build",
+            "start": "vinxi start"
+          },
+          "dependencies": {
+            "@solidjs/meta": "^0.29.4",
+            "@solidjs/router": "^0.15.3",
+            "@solidjs/start": "^1.0.10",
+            "solid-js": "^1.9.3",
+            "vinxi": "^0.5.7"
+          }
+        }
+        EOF
+
+        RUN cat <<'EOF' > app.config.js
+        import { defineConfig } from "@solidjs/start/config";
+
+        export default defineConfig({
+          server: {
+            compressPublicAssets: false,
+            experimental: {
+              asyncContext: true
+            }
+          }
+        });
+        EOF
+
+        RUN mkdir -p src/routes
+
+        RUN if [ -f index.jsx ]; then cp index.jsx src/routes/index.jsx; fi
+
+        RUN cat <<'EOF' > src/entry-client.jsx
+        import { mount, StartClient } from "@solidjs/start/client";
+
+        mount(() => <StartClient />, document.getElementById("app"));
+        EOF
+
+        RUN cat <<'EOF' > src/entry-server.jsx
+        import { createHandler, StartServer } from "@solidjs/start/server";
+
+        export default createHandler(() => (
+          <StartServer
+            document={({ assets, children, scripts }) => (
+              <html lang="en">
+                <head>
+                  <meta charset="utf-8" />
+                  <meta name="viewport" content="width=device-width, initial-scale=1" />
+                  <title>S4 Service Provider Console</title>
+                  {assets}
+                </head>
+                <body style="margin: 0; background-color: #111827; color: #f3f4f6; font-family: system-ui, -apple-system, sans-serif;">
+                  <div id="app">{children}</div>
+                  {scripts}
+                </body>
+              </html>
+            )}
+          />
+        ));
+        EOF
+
+        RUN cat <<'EOF' > src/app.jsx
+        import { Router } from "@solidjs/router";
+        import { FileRoutes } from "@solidjs/start/router";
+        import { Suspense } from "solid-js";
+
+        export default function App() {
+          return (
+            <Router
+              root={props => (
+                <Suspense>{props.children}</Suspense>
+              )}
+            >
+              <FileRoutes />
+            </Router>
+          );
+        }
+        EOF
+
+        RUN npm install
+        RUN npm run build
+
+        # Ensure static assets are linked where Nitro looks for them at runtime
+        RUN mkdir -p .output/server/chunks/public && cp -r .output/public/* .output/server/chunks/public/
+
+        EXPOSE 3000
+        CMD ["npm", "run", "start"]
+    ports:
+      - "3000:3000"
     depends_on:
-      - s4-gateway
-    deploy:
-      mode: replicated
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-
-  s4-gateway:
-    image: s4:latest
-    build: .
-    expose:
-      - "8080"
-    volumes:
-      - s4_data:/data/s4
-    environment:
-      - S4_PORT=8080
-      - S4_DB_PATH=/data/s4/s4_metadata.db
-      - S4_STORAGE_PATH=/data/s4/objects
-      - S4_CERTS_PATH=/data/s4/certs
-      - S4_DOMAIN=yourdomain.com
-      - S4_CONTACT_EMAIL=admin@yourdomain.com
-    deploy:
-      mode: replicated
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-
-volumes:
-  s4_data:
-    driver: local
+      - s4_gateway
