@@ -71,20 +71,20 @@
 
 ## Serverless Functions Gateway (`serverless_functions_gateway.dart`)
 
-* **`S4ServerlessGateway({String s4GatewayUrl, int concurrentWorkers})`**
-* Initializes the gateway manager instance with `s4GatewayUrl` (default `'http://localhost:8080'`) and `concurrentWorkers` persistent isolates (default `4`).
+* **`S4ServerlessGateway({String s4GatewayUrl})`**
+* Initializes the gateway manager instance with `s4GatewayUrl` (default `'http://localhost:8080'`).
 
 
-* **`Future<void> initialize()`**
-* Starts the underlying `isolate_manager` worker pool. Must be called before invoking tasks.
+* **`Future<void> initialize({int proxyPort})`**
+* Starts the embedded reverse proxy server on the specified port (default `8081`) to route traffic to tenant serverless daemons. Must be called before handling requests.
 
 
-* **`Future<TenantTaskResult> invokeTask({required String tenantId, required String accessKeyId, required String secretAccessKey, required String prompt})`**
-* Submits a new serverless function task to the isolate pool queue, executes the stubbed LLM call, and writes the output back to S4 storage under `isolates/<taskId>-<timestamp>`.
+* **`Future<TenantTaskResult> invokeTask({required String tenantId, required String accessKeyId, required String secretAccessKey, required String prompt, bool isDaemon})`**
+* Dynamically spawns an isolate to execute a task or spin up a persistent serverless daemon, storing outputs to S4 or returning proxied server endpoints.
 
 
 * **`Future<void> shutdown()`**
-* Gracefully stops and tears down the persistent isolate worker pool.
+* Gracefully closes the embedded proxy server.
 
 
 
@@ -94,10 +94,10 @@
 
 * **`TenantTaskRequest`**
 * Carries payload data from the main isolate to the background worker isolate.
-* Properties: `tenantId`, `accessKeyId`, `secretAccessKey`, `prompt`, `taskId`, `s4GatewayUrl`.
+* Properties: `tenantId`, `accessKeyId`, `secretAccessKey`, `prompt`, `taskId`, `s4GatewayUrl`, `isDaemon`.
 * Methods: `toJson()`, `factory TenantTaskRequest.fromJson(Map<String, dynamic> json)`.
 
 
 * **`TenantTaskResult`**
-* Represents the structured output returned by a completed isolate task execution.
-* Properties: `taskId` (`String`), `s4ObjectPath` (`String`), `llmResponse` (`String`), `success` (`bool`), `error` (`String?`).
+* Represents the structured output returned by a completed isolate task execution or daemon startup.
+* Properties: `taskId` (`String`), `s4ObjectPath` (`String`), `llmResponse` (`String`), `serverAddress` (`String?`), `success` (`bool`), `error` (`String?`).
