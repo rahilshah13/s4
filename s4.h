@@ -19,6 +19,7 @@
 #define S4_SECRET_KEY_LEN 128
 #define S4_MAX_QUERY_LEN 2048
 #define S4_REPLICATION_FACTOR 2
+#define S4_MAX_URL_LEN 2048
 
 typedef enum {
     S4_BACKEND_DISK = 0,
@@ -118,6 +119,12 @@ int s4_event_poll(sqlite3 *db, const char *tenant_id, const char *bucket, uint64
 
 int s4_credential_create(sqlite3 *db, const char *account_id, char *out_access_key, char *out_secret_key);
 bool s4_credential_verify(sqlite3 *db, const char *access_key_id, const char *signature, const char *payload_hash, const char *string_to_sign, s4_credential_t *out_cred);
+
+/* Presigned URL Support */
+int s4_presigned_url_generate(const char *base_url, const char *method, const char *bucket, const char *key, 
+                              const char *access_key_id, const char *secret_access_key, 
+                              uint32_t expiration_seconds, char *out_url, size_t max_url_len);
+bool s4_presigned_verify(sqlite3 *db, const char *method, const char *uri, const char *query_string, s4_credential_t *out_cred);
 
 int s4_db_init(s4_config_t *config);
 void s4_db_close(s4_config_t *config);
