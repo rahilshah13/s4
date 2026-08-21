@@ -69,6 +69,14 @@ export default function Dashboard() {
   const [fnLoading, setFnLoading] = createSignal(false);
   const [copyStatus, setCopyStatus] = createSignal("");
 
+  // Presigned URL & Object Upload Test State
+  const [presignBucket, setPresignBucket] = createSignal("logs");
+  const [presignKey, setPresignKey] = createSignal("app.log");
+  const [presignExpires, setPresignExpires] = createSignal(3600);
+  const [presignedUrlResult, setPresignedUrlResult] = createSignal(null);
+  const [uploadContent, setUploadContent] = createSignal("Hello, S4 immutable storage write test!");
+  const [uploadStatus, setUploadStatus] = createSignal(null);
+
   const runPrologQuery = async () => {
     try {
       const res = await fetch(getApiUrl("/api/query"));
@@ -82,6 +90,43 @@ export default function Dashboard() {
       result: true,
       matches: [{ bucket: "logs", count: 42 }]
     });
+  };
+
+  const generatePresignedUrl = async () => {
+    try {
+      const res = await fetch(getApiUrl(`/api/presign?bucket=${presignBucket()}&key=${presignKey()}&expires=${presignExpires()}`));
+      if (res.ok) {
+        const data = await res.json();
+        setPresignedUrlResult(data);
+      } else {
+        setPresignedUrlResult({ error: `Failed to generate: ${res.statusText}` });
+      }
+    } catch (e) {
+      setPresignedUrlResult({ error: e.toString() });
+    }
+  };
+
+  const testUploadWithPresignedUrl = async () => {
+    const urlObj = presignedUrlResult();
+    if (!urlObj || !urlObj.url) {
+      setUploadStatus({ success: false, message: "Generate a presigned URL first." });
+      return;
+    }
+
+    try {
+      const res = await fetch(urlObj.url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: uploadContent()
+      });
+      if (res.ok) {
+        setUploadStatus({ success: true, message: "Upload verified successfully via Presigned URL!" });
+      } else {
+        setUploadStatus({ success: false, message: `Upload failed: ${res.status} ${res.statusText}` });
+      }
+    } catch (e) {
+      setUploadStatus({ success: false, message: e.toString() });
+    }
   };
 
   const invokeServerlessTask = async () => {
@@ -161,6 +206,12 @@ export default function Dashboard() {
               Tenants & Buckets
             </button>
             <button
+              onClick={() => setActiveTab("storage")}
+              style={`text-align: left; padding: 10px 14px; border-radius: 6px; font-size: 14px; cursor: pointer; border: none; font-weight: 500; ${activeTab() === 'storage' ? 'background-color: #3b82f6; color: #ffffff;' : 'background-color: transparent; color: #94a3b8;'}`}
+            >
+              Object Storage & Presign
+            </button>
+            <button
               onClick={() => setActiveTab("serverless")}
               style={`text-align: left; padding: 10px 14px; border-radius: 6px; font-size: 14px; cursor: pointer; border: none; font-weight: 500; ${activeTab() === 'serverless' ? 'background-color: #3b82f6; color: #ffffff;' : 'background-color: transparent; color: #94a3b8;'}`}
             >
@@ -238,6 +289,83 @@ export default function Dashboard() {
                     </For>
                   </tbody>
                 </table>
+              </div>
+            </section>
+          </Show>
+
+          {/* View: Object Storage & Presign */}
+          <Show when={activeTab() === "storage"}>
+            <section style="display: flex; flex-direction: column; gap: 20px;">
+              <h2 style="font-size: 20px; font-weight: 600; margin: 0;">Presigned URLs & Object Upload Testing</h2>
+
+              {/* Generator Configuration Box */}
+              <div style="background-color: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+                <h3 style="margin: 0; font-size: 14px; color: #38bdf8;">Generate Presigned URL</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                  <div>
+                    <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Bucket</label>
+                    <input
+                      type="text"
+                      value={presignBucket()}
+                      onInput={e => setPresignBucket(e.currentTarget.value)}
+                      style="width: 100%; background-color: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; color: #f8fafc; font-size: 13px;"
+                    />
+                  </div>
+                  <div>
+                    <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Object Key</label>
+                    <input
+                      type="text"
+                      value={presignKey()}
+                      onInput={e => setPresignKey(e.currentTarget.value)}
+                      style="width: 100%; background-color: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; color: #f8fafc; font-size: 13px;"
+                    />
+                  </div>
+                  <div>
+                    <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Expiration (Seconds)</label>
+                    <input
+                      type="number"
+                      value={presignExpires()}
+                      onInput={e => setPresignExpires(Number(e.currentTarget.value))}
+                      style="width: 100%; background-color: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; color: #f8fafc; font-size: 13px;"
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={generatePresignedUrl}
+                  style="background-color: #2563eb; color: #ffffff; border: none; border-radius: 6px; padding: 10px 16px; font-size: 14px; font-weight: 500; cursor: pointer; align-self: flex-start;"
+                >
+                  Generate URL
+                </button>
+                <Show when={presignedUrlResult()}>
+                  <pre style="margin: 0; background-color: #0f172a; padding: 12px; border-radius: 6px; color: #34d399; font-family: monospace; font-size: 12px; overflow-x: auto;">
+                    {JSON.stringify(presignedUrlResult(), null, 2)}
+                  </pre>
+                </Show>
+              </div>
+
+              {/* Upload Test Box */}
+              <div style="background-color: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+                <h3 style="margin: 0; font-size: 14px; color: #38bdf8;">Test Upload via Presigned URL</h3>
+                <div>
+                  <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Payload Content / Stream Data</label>
+                  <textarea
+                    value={uploadContent()}
+                    onInput={e => setUploadContent(e.currentTarget.value)}
+                    rows="2"
+                    style="width: 100%; background-color: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; color: #f8fafc; font-size: 13px; resize: vertical;"
+                  ></textarea>
+                </div>
+                <button
+                  onClick={testUploadWithPresignedUrl}
+                  style="background-color: #059669; color: #ffffff; border: none; border-radius: 6px; padding: 10px 16px; font-size: 14px; font-weight: 500; cursor: pointer; align-self: flex-start;"
+                >
+                  Upload Object
+                </button>
+                <Show when={uploadStatus()}>
+                  <div style={`padding: 10px; border-radius: 6px; font-size: 13px; font-family: monospace; background-color: ${uploadStatus().success ? '#064e3b' : '#7f1d1d'}; color: ${uploadStatus().success ? '#34d399' : '#fca5a5'};`}>
+                    {uploadStatus().message}
+                  </div>
+                </Show>
               </div>
             </section>
           </Show>
