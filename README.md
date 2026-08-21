@@ -22,6 +22,7 @@
 * `GET /tenants/:tenant_id/prolog/kbs(const char *tenant_id, const char *auth_header, s4_write_callback_t write_cb, void *user_data)`
 * `GET /tenants/:tenant_id/prolog/predicates(const char *tenant_id, const char *auth_header, s4_write_callback_t write_cb, void *user_data)`
 * `POST /tenants/:tenant_id/prolog/query(const char *tenant_id, const char *query_name, const char *auth_header, s4_write_callback_t write_cb, void *user_data)`
+* `GET /api/presign(const char *base_url, const char *method, const char *bucket, const char *key, uint32_t expiration_seconds, s4_write_callback_t write_cb, void *user_data)`
 
 ---
 
@@ -41,6 +42,8 @@
 * `int s4_event_poll(sqlite3 *db, const char *tenant_id, const char *bucket, uint64_t after_event_id, s4_write_callback_t write_cb, void *user_data)`
 * `int s4_credential_create(sqlite3 *db, const char *account_id, char *out_access_key, char *out_secret_key)`
 * `bool s4_credential_verify(sqlite3 *db, const char *access_key_id, const char *signature, const char *payload_hash, const char *string_to_sign, s4_credential_t *out_cred)`
+* `int s4_presigned_url_generate(const char *base_url, const char *method, const char *bucket, const char *key, const char *access_key_id, const char *secret_access_key, uint32_t expiration_seconds, char *out_url, size_t max_url_len)`
+* `bool s4_presigned_verify(sqlite3 *db, const char *method, const char *uri, const char *query_string, s4_credential_t *out_cred)`
 * `int s4_db_init(s4_config_t *config)`
 * `void s4_db_close(s4_config_t *config)`
 * `bool s4_tenant_verify_exists(sqlite3 *db, const char *tenant_id)`
@@ -73,20 +76,12 @@
 
 * **`S4ServerlessGateway({String s4GatewayUrl})`**
 * Initializes the gateway manager instance with `s4GatewayUrl` (default `'http://localhost:8080'`).
-
-
 * **`Future<void> initialize({int proxyPort})`**
 * Starts the embedded reverse proxy server on the specified port (default `8081`) to route traffic to tenant serverless daemons. Must be called before handling requests.
-
-
 * **`Future<TenantTaskResult> invokeTask({required String tenantId, required String accessKeyId, required String secretAccessKey, required String prompt, bool isDaemon})`**
 * Dynamically spawns an isolate to execute a task or spin up a persistent serverless daemon, storing outputs to S4 or returning proxied server endpoints.
-
-
 * **`Future<void> shutdown()`**
 * Gracefully closes the embedded proxy server.
-
-
 
 ---
 
@@ -96,8 +91,6 @@
 * Carries payload data from the main isolate to the background worker isolate.
 * Properties: `tenantId`, `accessKeyId`, `secretAccessKey`, `prompt`, `taskId`, `s4GatewayUrl`, `isDaemon`.
 * Methods: `toJson()`, `factory TenantTaskRequest.fromJson(Map<String, dynamic> json)`.
-
-
 * **`TenantTaskResult`**
 * Represents the structured output returned by a completed isolate task execution or daemon startup.
 * Properties: `taskId` (`String`), `s4ObjectPath` (`String`), `llmResponse` (`String`), `serverAddress` (`String?`), `success` (`bool`), `error` (`String?`).
