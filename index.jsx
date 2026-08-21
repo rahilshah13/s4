@@ -59,7 +59,7 @@ export default function Dashboard() {
   const [queryInput, setQueryInput] = createSignal("all_objects_replicated");
   const [queryOutput, setQueryOutput] = createSignal(null);
 
-  // Serverless Functions state
+  // Serverless Functions & Env Vars state
   const [fnTenantId, setFnTenantId] = createSignal("tenant-alpha");
   const [fnAccessKey, setFnAccessKey] = createSignal("key_sample_123");
   const [fnSecretKey, setFnSecretKey] = createSignal("secret_sample_abc");
@@ -67,6 +67,7 @@ export default function Dashboard() {
   const [fnIsDaemon, setFnIsDaemon] = createSignal(false);
   const [fnOutput, setFnOutput] = createSignal(null);
   const [fnLoading, setFnLoading] = createSignal(false);
+  const [copyStatus, setCopyStatus] = createSignal("");
 
   const runPrologQuery = async () => {
     try {
@@ -106,6 +107,22 @@ export default function Dashboard() {
       setFnOutput({ success: false, error: e.toString() });
     } finally {
       setFnLoading(false);
+    }
+  };
+
+  const generateEnvConfigSnippet = () => {
+    const s4Url = "http://localhost:8080";
+    const functionsUrl = "http://localhost:8081";
+    return `export S4_GATEWAY_URL="${s4Url}"\nexport S4_FUNCTIONS_GATEWAY_URL="${functionsUrl}"\nexport S4_TENANT_ID="${fnTenantId()}"\nexport S4_ACCESS_KEY_ID="${fnAccessKey()}"\nexport S4_SECRET_ACCESS_KEY="${fnSecretKey()}"`;
+  };
+
+  const copyEnvToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(generateEnvConfigSnippet());
+      setCopyStatus("Copied env variables to clipboard!");
+      setTimeout(() => setCopyStatus(""), 3000);
+    } catch (e) {
+      setCopyStatus("Failed to copy clipboard.");
     }
   };
 
@@ -229,6 +246,27 @@ export default function Dashboard() {
           <Show when={activeTab() === "serverless"}>
             <section style="display: flex; flex-direction: column; gap: 20px;">
               <h2 style="font-size: 20px; font-weight: 600; margin: 0;">Serverless Functions & Isolate Daemons</h2>
+              
+              {/* Copy Env Config Component */}
+              <div style="background-color: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <h3 style="margin: 0; font-size: 14px; color: #38bdf8;">Tenant Application Env Variables</h3>
+                  <button
+                    onClick={copyEnvToClipboard}
+                    style="background-color: #059669; color: #ffffff; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer;"
+                  >
+                    Copy Env to Clipboard
+                  </button>
+                </div>
+                <pre style="margin: 0; background-color: #0f172a; padding: 10px; border-radius: 6px; color: #cbd5e1; font-family: monospace; font-size: 11px; overflow-x: auto;">
+                  {generateEnvConfigSnippet()}
+                </pre>
+                <Show when={copyStatus()}>
+                  <span style="font-size: 12px; color: #34d399;">{copyStatus()}</span>
+                </Show>
+              </div>
+
+              {/* Serverless Prompt & Execution Panel */}
               <div style="background-color: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                   <div>
