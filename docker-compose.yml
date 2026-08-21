@@ -123,12 +123,34 @@ services:
         RUN npm install
         RUN npm run build
 
-        # Ensure static assets are linked where Nitro looks for them at runtime
         RUN mkdir -p .output/server/chunks/public && cp -r .output/public/* .output/server/chunks/public/
 
         EXPOSE 3000
         CMD ["npm", "run", "start"]
     ports:
       - "3000:3000"
+    depends_on:
+      - s4_gateway
+
+  serverless_functions_gateway:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM dart:stable AS builder
+        WORKDIR /app
+        COPY serverless_functions_gateway.dart pubspec.yaml ./
+        RUN dart pub get
+        RUN dart compile exe serverless_functions_gateway.dart -o serverless_gateway
+
+        FROM alpine:3.20
+        RUN apk add --no-cache libstdc++ ca-certificates
+        WORKDIR /app
+        COPY --from=builder /app/serverless_gateway /app/serverless_gateway
+        EXPOSE 8081
+        CMD ["/app/serverless_gateway"]
+    ports:
+      - "8081:8081"
+    environment:
+      - S4_GATEWAY_URL=http://s4_gateway:8080
     depends_on:
       - s4_gateway
