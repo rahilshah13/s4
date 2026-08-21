@@ -68,7 +68,7 @@ Future<Map<String, dynamic>> s4LambdaWorker(dynamic rawParams) async {
 
   try {
     if (request.isDaemon) {
-      final server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       final port = server.port;
       final token = 'token_${DateTime.now().millisecondsSinceEpoch}_${request.taskId}';
 
@@ -88,14 +88,11 @@ Future<Map<String, dynamic>> s4LambdaWorker(dynamic rawParams) async {
           ..close();
       });
 
-      final hostIp = Platform.environment['HOST_IP'] ?? '127.0.0.1';
-      final endpointStr = '$hostIp:$port:$token';
-
       return {
         'taskId': request.taskId,
         's4ObjectPath': '',
         'llmResponse': '',
-        'serverAddress': endpointStr,
+        'serverAddress': '127.0.0.1:$port:$token',
         'success': true,
       };
     } else {
@@ -152,12 +149,62 @@ Future<String> _stubLlmCall(String prompt) async {
 
 class S4ServerlessGateway {
   final String s4GatewayUrl;
+  final Map<String, Map<String, String>> _activeDaemons = {};
+  HttpServer? _proxyServer;
 
   S4ServerlessGateway({
     this.s4GatewayUrl = 'http://localhost:8080',
   });
 
-  Future<void> initialize() async {}
+  Future<void> initialize({int proxyPort = 8081}) async {
+    _proxyServer = await HttpServer.bind(InternetAddress.anyIPv4, proxyPort);
+    _proxyServer!.listen(_handleProxyRequest);
+  }
+
+  Future<void> _handleProxyRequest(HttpRequest request) async {
+    final segments = request.uri.pathSegments;
+    if (segments.isEmpty) {
+      request.response
+        ..statusCode = HttpStatus.badRequest
+        ..write('Missing task ID routing segment')
+        ..close();
+      return;
+    }
+
+    final taskId = segments.first;
+    final daemonInfo = _activeDaemons[taskId];
+    if (daemonInfo == null) {
+      request.response
+        ..statusCode = HttpStatus.notFound
+        ..write('Serverless daemon not found or inactive')
+        ..close();
+      return;
+    }
+
+    final parts = daemonInfo['address']!.split(':');
+    final isolatePort = int.parse(parts[1]);
+    final token = parts[2];
+
+    try {
+      final subPath = '/' + segments.skip(1).join('/');
+      final targetUri = Uri.parse('http://127.0.0.1:$isolatePort$subPath');
+      
+      final httpClientRequest = await http.Client().get(
+        targetUri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      request.response
+        ..statusCode = httpClientRequest.statusCode
+        ..write(httpClientRequest.body)
+        ..close();
+    } catch (e) {
+      request.response
+        ..statusCode = HttpStatus.internalServerError
+        ..write('Proxy error: $e')
+        ..close();
+    }
+  }
 
   Future<TenantTaskResult> invokeTask({
     required String tenantId,
@@ -178,29 +225,32 @@ class S4ServerlessGateway {
       isDaemon: isDaemon,
     );
 
-    final dynamic rawResult;
-    if (isDaemon) {
-      final manager = IsolateManager.create(s4LambdaWorker, concurrent: 1, isDebug: false);
-      await manager.start();
-      rawResult = await manager.compute(request.toJson());
-    } else {
-      final manager = IsolateManager.create(s4LambdaWorker, concurrent: 1, isDebug: false);
-      await manager.start();
-      rawResult = await manager.compute(request.toJson());
+    final manager = IsolateManager.create(s4LambdaWorker, concurrent: 1, isDebug: false);
+    await manager.start();
+    final rawResult = await manager.compute(request.toJson());
+    if (!isDaemon) {
       await manager.stop();
     }
 
     final resMap = Map<String, dynamic>.from(rawResult);
+    if (isDaemon && resMap['success'] == true && resMap['serverAddress'] != null) {
+      _activeDaemons[taskId] = {
+        'address': resMap['serverAddress'],
+        'managerId': manager.hashCode.toString(),
+      };
+    }
 
     return TenantTaskResult(
       taskId: resMap['taskId'],
       s4ObjectPath: resMap['s4ObjectPath'],
       llmResponse: resMap['llmResponse'],
-      serverAddress: resMap['serverAddress'],
+      serverAddress: resMap['serverAddress'] != null ? 'http://localhost:8081/$taskId' : null,
       success: resMap['success'],
       error: resMap['error'],
     );
   }
 
-  Future<void> shutdown() async {}
+  Future<void> shutdown() async {
+    await _proxyServer?.close(force: true);
+  }
 }
