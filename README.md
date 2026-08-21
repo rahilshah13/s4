@@ -68,3 +68,36 @@
 * `int s4_gateway_init(s4_config_t *config)`
 * `int s4_gateway_run(void)`
 * `void s4_gateway_shutdown(void)`
+
+## Serverless Functions Gateway (`serverless_functions_gateway.dart`)
+
+* **`S4ServerlessGateway({String s4GatewayUrl, int concurrentWorkers})`**
+* Initializes the gateway manager instance with `s4GatewayUrl` (default `'http://localhost:8080'`) and `concurrentWorkers` persistent isolates (default `4`).
+
+
+* **`Future<void> initialize()`**
+* Starts the underlying `isolate_manager` worker pool. Must be called before invoking tasks.
+
+
+* **`Future<TenantTaskResult> invokeTask({required String tenantId, required String accessKeyId, required String secretAccessKey, required String prompt})`**
+* Submits a new serverless function task to the isolate pool queue, executes the stubbed LLM call, and writes the output back to S4 storage under `isolates/<taskId>-<timestamp>`.
+
+
+* **`Future<void> shutdown()`**
+* Gracefully stops and tears down the persistent isolate worker pool.
+
+
+
+---
+
+### Data Transfer Objects (DTOs)
+
+* **`TenantTaskRequest`**
+* Carries payload data from the main isolate to the background worker isolate.
+* Properties: `tenantId`, `accessKeyId`, `secretAccessKey`, `prompt`, `taskId`, `s4GatewayUrl`.
+* Methods: `toJson()`, `factory TenantTaskRequest.fromJson(Map<String, dynamic> json)`.
+
+
+* **`TenantTaskResult`**
+* Represents the structured output returned by a completed isolate task execution.
+* Properties: `taskId` (`String`), `s4ObjectPath` (`String`), `llmResponse` (`String`), `success` (`bool`), `error` (`String?`).
