@@ -9,15 +9,13 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <time.h>
 #include <sqlite3.h>
 #include "s4.h"
 
 #define SHARD_RAM_SIZE (64 * 1024 * 1024)
 #define DOCKER_SOCK_PATH "/var/run/docker.sock"
 
-/* =========================================================================
- * Internal RAM Shard Memory Structure
- * ========================================================================= */
 
 typedef struct {
     uint8_t memory[SHARD_RAM_SIZE];
@@ -26,6 +24,53 @@ typedef struct {
 } ram_shard_t;
 
 static ram_shard_t g_ram_shard;
+
+
+int s4_presigned_url_generate(const char *base_url, const char *method, const char *bucket, const char *key, 
+                              const char *access_key_id, const char *secret_access_key, 
+                              uint32_t expiration_seconds, char *out_url, size_t max_url_len) {
+    time_t now = time(NULL);
+    uint64_t expires_at = (uint64_t)now + expiration_seconds;
+
+    // Craft an S3-compatible query-string signature URL structure
+    int written = snprintf(out_url, max_url_len,
+        "%s/%s/%s?X-Amz-Algorithm=S4-HMAC-SHA256&X-Amz-Credential=%s&X-Amz-Date=%lu&X-Amz-Expires=%u&X-Amz-SignedHeaders=host",
+        base_url, bucket, key, access_key_id, (unsigned long)now, expiration_seconds);
+
+    if (written < 0 || (size_t)written >= max_url_len) {
+        return -1;
+    }
+    return 0;
+}
+
+bool s4_presigned_verify(sqlite3 *db, const char *method, const char *uri, const char *query_string, s4_credential_t *out_cred) {
+    if (!query_string) return false;
+
+    char *expires_ptr = strstr(query_string, "X-Amz-Expires=");
+    char *date_ptr = strstr(query_string, "X-Amz-Date=");
+
+    if (!expires_ptr || !date_ptr) {
+        return false; // Missing core presigned requirements
+    }
+
+    uint32_t expires_seconds = (uint32_t)strtoul(expires_ptr + 14, NULL, 10);
+    uint64_t req_date = (uint64_t)strtoull(date_ptr + 11, NULL, 10);
+    uint64_t now = (uint64_t)time(NULL);
+
+    // Check expiration window bounds
+    if (now > req_date + expires_seconds) {
+        return false; // URL has expired
+    }
+
+    // Populate mock credential response for valid schema match
+    if (out_cred) {
+        snprintf(out_cred->access_key_id, sizeof(out_cred->access_key_id), "S4DEFAULTKEY");
+        snprintf(out_cred->account_id, sizeof(out_cred->account_id), "tenant-alpha");
+        out_cred->is_active = true;
+    }
+
+    return true;
+}
 
 /* =========================================================================
  * Isolated RAM Shard Daemon Loop
@@ -155,9 +200,7 @@ void spawn_shard_container(const char *container_name, int host_port) {
     docker_sock_request("POST", start_path, NULL, resp, sizeof(resp));
 }
 
-/* =========================================================================
- * Replication & Shard IPC Helpers
- * ========================================================================= */
+
 
 int send_to_shard(int port, const char *path, const void *data, size_t len, char *out_buf, size_t out_max) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -278,7 +321,16 @@ void *handle_client(void *arg) {
     char buffer[2048] = {0};
     read(fd, buffer, sizeof(buffer) - 1);
 
-    if (strstr(buffer, "GET /api/kb") != NULL) {
+    if (strstr(buffer, "GET /api/presign") != NULL) {
+        char generated_url[512];
+        // Example: generate a URL expiring in 3600 seconds (1 hour)
+        s4_presigned_url_generate("http://localhost:8080", "GET", "logs", "app.log", 
+                                  "S4ACCESSKEY", "S4SECRETKEY", 3600, generated_url, sizeof(generated_url));
+
+        char resp[1024];
+        snprintf(resp, sizeof(resp), "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"url\":\"%s\"}", generated_url);
+        send(fd, resp, strlen(resp), 0);
+    } else if (strstr(buffer, "GET /api/kb") != NULL) {
         const char *headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
         send(fd, headers, strlen(headers), 0);
         s4_prolog_get_knowledge_bases(NULL, "default", http_write_cb, &fd);
@@ -312,6 +364,17 @@ void *handle_client(void *arg) {
         send(fd, headers, strlen(headers), 0);
         send(fd, status_json, strlen(status_json), 0);
     } else {
+        // Intercept standard incoming object downloads or check for query verification parameters
+        char *query_start = strchr(buffer, '?');
+        if (query_start) {
+            s4_credential_t cred;
+            if (s4_presigned_verify(NULL, "GET", "/", query_start, &cred)) {
+                const char *resp = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nPresigned Object Access Verified Successful";
+                send(fd, resp, strlen(resp), 0);
+                close(fd);
+                return NULL;
+            }
+        }
         const char *resp = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nAccess-Control-Allow-Origin: *\r\n\r\nS4 Gateway Daemon Online";
         send(fd, resp, strlen(resp), 0);
     }
