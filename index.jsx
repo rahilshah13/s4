@@ -1,12 +1,11 @@
 import { createSignal, createResource, For, Show } from "solid-js";
 
-// Helper to resolve the gateway URL based on execution context (SSR vs Client)
-const getApiUrl = (path) => {
+const getApiUrl = (path, service = "s4") => {
   const isServer = typeof window === "undefined";
-  const baseUrl = isServer
-    ? (process.env.GATEWAY_URL || "http://s4_gateway:8080")
-    : "http://localhost:8080";
-  return `${baseUrl}${path}`;
+  if (service === "functions") {
+    return isServer ? (process.env.FUNCTIONS_GATEWAY_URL || "http://serverless_functions_gateway:8081") : "http://localhost:8081";
+  }
+  return isServer ? (process.env.GATEWAY_URL || "http://s4_gateway:8080") : "http://localhost:8080";
 };
 
 const fetchClusterData = async () => {
@@ -60,6 +59,15 @@ export default function Dashboard() {
   const [queryInput, setQueryInput] = createSignal("all_objects_replicated");
   const [queryOutput, setQueryOutput] = createSignal(null);
 
+  // Serverless Functions state
+  const [fnTenantId, setFnTenantId] = createSignal("tenant-alpha");
+  const [fnAccessKey, setFnAccessKey] = createSignal("key_sample_123");
+  const [fnSecretKey, setFnSecretKey] = createSignal("secret_sample_abc");
+  const [fnPrompt, setFnPrompt] = createSignal("Summarize recent log streams");
+  const [fnIsDaemon, setFnIsDaemon] = createSignal(false);
+  const [fnOutput, setFnOutput] = createSignal(null);
+  const [fnLoading, setFnLoading] = createSignal(false);
+
   const runPrologQuery = async () => {
     try {
       const res = await fetch(getApiUrl("/api/query"));
@@ -73,6 +81,32 @@ export default function Dashboard() {
       result: true,
       matches: [{ bucket: "logs", count: 42 }]
     });
+  };
+
+  const invokeServerlessTask = async () => {
+    setFnLoading(true);
+    try {
+      const res = await fetch(getApiUrl("/invoke", "functions"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId: fnTenantId(),
+          accessKeyId: fnAccessKey(),
+          secretAccessKey: fnSecretKey(),
+          prompt: fnPrompt(),
+          isDaemon: fnIsDaemon()
+        })
+      });
+      if (res.ok) {
+        setFnOutput(await res.json());
+      } else {
+        setFnOutput({ success: false, error: `Gateway error: ${res.statusText}` });
+      }
+    } catch (e) {
+      setFnOutput({ success: false, error: e.toString() });
+    } finally {
+      setFnLoading(false);
+    }
   };
 
   return (
@@ -108,6 +142,12 @@ export default function Dashboard() {
               style={`text-align: left; padding: 10px 14px; border-radius: 6px; font-size: 14px; cursor: pointer; border: none; font-weight: 500; ${activeTab() === 'tenants' ? 'background-color: #3b82f6; color: #ffffff;' : 'background-color: transparent; color: #94a3b8;'}`}
             >
               Tenants & Buckets
+            </button>
+            <button
+              onClick={() => setActiveTab("serverless")}
+              style={`text-align: left; padding: 10px 14px; border-radius: 6px; font-size: 14px; cursor: pointer; border: none; font-weight: 500; ${activeTab() === 'serverless' ? 'background-color: #3b82f6; color: #ffffff;' : 'background-color: transparent; color: #94a3b8;'}`}
+            >
+              Serverless Functions
             </button>
             <button
               onClick={() => setActiveTab("prolog")}
@@ -181,6 +221,78 @@ export default function Dashboard() {
                     </For>
                   </tbody>
                 </table>
+              </div>
+            </section>
+          </Show>
+
+          {/* View: Serverless Functions */}
+          <Show when={activeTab() === "serverless"}>
+            <section style="display: flex; flex-direction: column; gap: 20px;">
+              <h2 style="font-size: 20px; font-weight: 600; margin: 0;">Serverless Functions & Isolate Daemons</h2>
+              <div style="background-color: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                  <div>
+                    <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Tenant ID</label>
+                    <input
+                      type="text"
+                      value={fnTenantId()}
+                      onInput={e => setFnTenantId(e.currentTarget.value)}
+                      style="width: 100%; background-color: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; color: #f8fafc; font-size: 13px;"
+                    />
+                  </div>
+                  <div>
+                    <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Access Key ID</label>
+                    <input
+                      type="text"
+                      value={fnAccessKey()}
+                      onInput={e => setFnAccessKey(e.currentTarget.value)}
+                      style="width: 100%; background-color: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; color: #f8fafc; font-size: 13px;"
+                    />
+                  </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                  <div>
+                    <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Secret Access Key</label>
+                    <input
+                      type="password"
+                      value={fnSecretKey()}
+                      onInput={e => setFnSecretKey(e.currentTarget.value)}
+                      style="width: 100%; background-color: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; color: #f8fafc; font-size: 13px;"
+                    />
+                  </div>
+                  <div>
+                    <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Execution Mode</label>
+                    <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; color: #f8fafc; font-size: 13px; cursor: pointer;">
+                      <input
+                        type="checkbox"
+                        checked={fnIsDaemon()}
+                        onChange={e => setFnIsDaemon(e.currentTarget.checked)}
+                      />
+                      Start as Serverless Server (Daemon Isolate)
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <label style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Plain Text Task Prompt</label>
+                  <textarea
+                    value={fnPrompt()}
+                    onInput={e => setFnPrompt(e.currentTarget.value)}
+                    rows="3"
+                    style="width: 100%; background-color: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; color: #f8fafc; font-size: 13px; resize: vertical;"
+                  ></textarea>
+                </div>
+                <button
+                  onClick={invokeServerlessTask}
+                  disabled={fnLoading()}
+                  style="background-color: #2563eb; color: #ffffff; border: none; border-radius: 6px; padding: 10px 16px; font-size: 14px; font-weight: 500; cursor: pointer; align-self: flex-start;"
+                >
+                  {fnLoading() ? "Executing..." : "Invoke Task / Start Server"}
+                </button>
+                <Show when={fnOutput()}>
+                  <pre style="margin: 0; background-color: #0f172a; padding: 12px; border-radius: 6px; color: #34d399; font-family: monospace; font-size: 12px; overflow-x: auto;">
+                    {JSON.stringify(fnOutput(), null, 2)}
+                  </pre>
+                </Show>
               </div>
             </section>
           </Show>
